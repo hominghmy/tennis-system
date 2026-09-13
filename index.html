@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>網球套票排課及記錄系統</title>
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #2e7d32;
+            --primary-hover: #1b5e20;
+            --bg-color: #f4f6f8;
+            --card-bg: #ffffff;
+            --text-color: #333333;
+            --border-color: #e0e0e0;
+            --danger-color: #d32f2f;
+            --warning-color: #ed6c02;
+            --info-color: #0288d1;
+            --success-color: #2e7d32;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding-bottom: 40px;
+        }
+
+        /* 登入遮罩 */
+        #loginOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        .login-card {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .login-card h2 {
+            margin-bottom: 20px;
+            color: var(--primary-color);
+        }
+
+        header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+
+        @media (min-width: 950px) {
+            .grid {
+                grid-template-columns: 380px 1fr;
+            }
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+
+        .card h2 {
+            font-size: 1.25rem;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.2);
+        }
+
+        .staff-input {
+            background-color: #fffde7;
+            border-color: #ffe082 !important;
+        }
+
+        button, .btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: background 0.2s;
+            display: inline-block;
+            text-align: center;
+        }
+
+        button:hover, .btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-full {
+            width: 100%;
+        }
+
+        .btn-danger {
+            background-color: var(--danger-color);
+        }
+        .btn-danger:hover {
+            background-color: #b71c1c;
+        }
+
+        .btn-warning {
+            background-color: var(--warning-color);
+        }
+        .btn-warning:hover {
+            background-color: #e65100;
+        }
+
+        .btn-excel {
+            background-color: #1d6f42;
+        }
+        .btn-excel:hover {
+            background-color: #155231;
+        }
+
+        .btn-small {
+            padding: 5px 10px;
+            font-size: 0.85rem;
+            margin-right: 4px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 10px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.9rem;
+        }
+
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.78rem;
+            font-weight: bold;
+        }
+
+        .badge-resident {
+            background-color: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .badge-visitor {
+            background-color: #fff3e0;
+            color: #e65100;
+        }
+
+        .student-select-item {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .student-select-item:hover {
+            background-color: #f0f7f0;
+        }
+
+        .student-select-item.active {
+            background-color: #e8f5e9;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .stat-box {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            flex: 1;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .stat-card .num {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        .log-list {
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+            background: #f9f9f9;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+
+        .log-item {
+            padding: 4px 0;
+            border-bottom: 1px dashed #ddd;
+            color: #555;
+        }
+        .log-item:last-child {
+            border-bottom: none;
+        }
+
+        .batch-row {
+            display: grid;
+            grid-template-columns: 40px 1fr 1.5fr 40px;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .protected-content {
+            display: none;
+        }
+
+        /* Modal 彈窗樣式 */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9000;
+        }
+        .modal-card {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 450px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 密碼驗證遮罩 -->
+    <div id="loginOverlay">
+        <div class="login-card">
+            <h2>網球套票排課及記錄系統</h2>
+            <p style="margin-bottom: 15px; color: #666;">請輸入系統存取密碼</p>
+            <div class="form-group">
+                <input type="password" id="sysPassword" placeholder="密碼">
+            </div>
+            <button class="btn-full" onclick="checkPassword()">登入系統</button>
+            <p id="loginErr" style="color: red; margin-top: 10px; display: none;">密碼錯誤，請重新輸入！</p>
+        </div>
+    </div>
+
+    <!-- 主頁面內容 -->
+    <div id="mainContent" class="protected-content">
+        <header>
+            <div class="header-container">
+                <h1>網球套票排課及記錄系統</h1>
+                <button class="btn-excel" onclick="exportToExcel()">匯出 Excel 分析及日誌報表</button>
+            </div>
+        </header>
+
+        <div class="container">
+            <div class="grid">
+                
+                <!-- 左側：搜尋學員與新增學員 -->
+                <div>
+                    <!-- 學員搜尋 -->
+                    <div class="card">
+                        <h2>學員搜尋</h2>
+                        <div class="form-group">
+                            <label>輸入學員姓名或編號 (SPCXXXX)</label>
+                            <div style="display: flex; gap: 8px;">
+                                <input type="text" id="searchInput" placeholder="搜尋姓名 / 編號..." onkeyup="if(event.key==='Enter') searchStudents()">
+                                <button onclick="searchStudents()" style="width: 100px;">搜尋</button>
+                            </div>
+                        </div>
+
+                        <!-- 搜尋結果清單（預設隱藏） -->
+                        <div id="searchResultsArea" style="display: none; margin-top: 15px;">
+                            <h3 style="font-size: 0.95rem; color: #666; margin-bottom: 8px;">搜尋結果 (點擊學員進行排課)</h3>
+                            <div style="max-height: 250px; overflow-y: auto;">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>編號</th>
+                                            <th>姓名/身份</th>
+                                            <th>總/剩堂數</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="studentTableBody">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 新增/增購套票表單 -->
+                    <div class="card">
+                        <h2>新增 / 增購學員套票</h2>
+                        <form id="addStudentForm" onsubmit="handleAddStudent(event)">
+                            <div class="form-group">
+                                <label>學員姓名 *</label>
+                                <input type="text" id="stdName" required placeholder="例如: 張小明">
+                            </div>
+                            <div class="form-group">
+                                <label>學員編號 (SPCXXXX) *</label>
+                                <input type="text" id="stdId" required placeholder="例如: SPC1001" pattern="^SPC\d+$" title="必須以 SPC 開頭並加上數字">
+                            </div>
+                            <div class="form-group">
+                                <label>學員身份 *</label>
+                                <select id="stdIdentity">
+                                    <option value="住戶">住戶</option>
+                                    <option value="訪客">訪客</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>付款狀態 *</label>
+                                <select id="stdPayment">
+                                    <option value="已付款">已付款 (+10堂)</option>
+                                    <option value="未付">未付 (記錄不加堂數)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>經手同事姓名 *</label>
+                                <input type="text" id="stdStaff" class="staff-input" required placeholder="請填寫經手同事姓名">
+                            </div>
+                            <button type="submit" class="btn-full">提交套票登記</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- 右側：排課與課堂紀錄面板 -->
+                <div>
+                    <div class="card" id="schedulePanel" style="display: none;">
+                        <h2 id="selectedStudentTitle">學員排課與紀錄</h2>
+                        
+                        <!-- 數據統計卡片 -->
+                        <div class="stat-box">
+                            <div class="stat-card">
+                                <div>已付款總堂數</div>
+                                <div class="num" id="statPaid">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <div>已上課堂數</div>
+                                <div class="num" id="statUsed">0</div>
+                            </div>
+                            <div class="stat-card">
+                                <div>剩餘堂數</div>
+                                <div class="num" id="statRemaining">0</div>
+                            </div>
+                        </div>
+
+                        <!-- 批量預約排課表單（支援一次最多10堂） -->
+                        <div style="background: #fdfdfd; padding: 15px; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <h3 style="font-size: 1.05rem; color: #444;">批量安排課堂 (最多一次排 10 堂)</h3>
+                                <button type="button" class="btn-small btn-warning" onclick="addBatchRow()">+ 新增一堂</button>
+                            </div>
+
+                            <form id="batchBookingForm" onsubmit="handleBatchBooking(event)">
+                                <div id="batchRowsContainer">
+                                    <!-- 動態生成 1~10 堂課輸入行 -->
+                                </div>
+                                <div class="form-group" style="margin-top: 15px;">
+                                    <label>經手同事姓名 *</label>
+                                    <input type="text" id="batchStaff" class="staff-input" required placeholder="請填寫經手同事姓名">
+                                </div>
+                                <button type="submit" class="btn-full">確認批量預約排課</button>
+                            </form>
+                        </div>
+
+                        <!-- 課堂紀錄列表 -->
+                        <h3>已排課堂紀錄</h3>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>日期</th>
+                                    <th>星期</th>
+                                    <th>班別 / 時間</th>
+                                    <th>經手人</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recordTableBody">
+                            </tbody>
+                        </table>
+
+                        <!-- 操作異動日誌 -->
+                        <div style="margin-top: 25px;">
+                            <h4 style="margin-bottom: 5px; color: #666; font-size: 0.9rem;">此學員異動紀錄 log (經手人存查)</h4>
+                            <div class="log-list" id="studentLogs"></div>
+                        </div>
+                    </div>
+
+                    <!-- 未選取學員時的提示 -->
+                    <div class="card" id="emptyPanel" style="text-align: center; padding: 60px 20px; color: #888;">
+                        <h3>請使用左側「搜尋學員」並選取一名學員以進行排課或查閱記錄</h3>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- 改期 Modal 彈窗 -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal-card">
+            <h3 style="margin-bottom: 15px; color: var(--primary-color);">課堂改期</h3>
+            <form onsubmit="saveEditedBooking(event)">
+                <input type="hidden" id="editRecId">
+                <div class="form-group">
+                    <label>新上課日期 *</label>
+                    <input type="date" id="editDate" required onchange="handleEditDateChange()">
+                </div>
+                <div class="form-group">
+                    <label>新班別與時段 *</label>
+                    <select id="editClass" required>
+                        <option value="">-- 請先選擇日期 --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>經手同事姓名 *</label>
+                    <input type="text" id="editStaff" class="staff-input" required placeholder="請填寫經手同事姓名">
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" style="flex: 1;">確認改期</button>
+                    <button type="button" class="btn-danger" style="flex: 1;" onclick="closeEditModal()">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const CLASS_SCHEDULE = {
+            1: [
+                { name: "Red Ball", time: "1530-1630" },
+                { name: "Orange Ball", time: "1630-1730" },
+                { name: "Green Ball", time: "1730-1900" }
+            ],
+            2: [
+                { name: "Red Ball", time: "1630-1730" },
+                { name: "Orange Ball", time: "1730-1830" },
+                { name: "Orange Ball", time: "1830-2000" }
+            ],
+            3: [
+                { name: "Orange Ball", time: "1630-1730" },
+                { name: "Yellow Ball", time: "1730-1930" }
+            ],
+            4: [
+                { name: "Red Ball", time: "1530-1630" },
+                { name: "Orange Ball", time: "1630-1730" },
+                { name: "Green Ball", time: "1730-1900" }
+            ],
+            5: [
+                { name: "Orange Ball", time: "1630-1730" },
+                { name: "Yellow Ball", time: "1730-1930" }
+            ],
+            6: [
+                { name: "Red Ball", time: "0900-1000" },
+                { name: "Red Ball", time: "1000-1100" },
+                { name: "Green Ball", time: "1030-1200" },
+                { name: "P&P", time: "1500-1700" }
+            ],
+            0: [
+                { name: "P&P", time: "1000-1200" }
+            ]
+        };
+
+        const WEEK_NAMES = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+
+        let students = JSON.parse(localStorage.getItem('tennis_students')) || [];
+        let selectedStudentId = null;
+        let batchRowCount = 0;
+
+        function checkPassword() {
+            const pwd = document.getElementById('sysPassword').value;
+            if (pwd === 'coscourse') {
+                document.getElementById('loginOverlay').style.display = 'none';
+                document.getElementById('mainContent').style.display = 'block';
+            } else {
+                document.getElementById('loginErr').style.display = 'block';
+            }
+        }
+
+        function saveData() {
+            localStorage.setItem('tennis_students', JSON.stringify(students));
+        }
+
+        // 搜尋學員（列表預設隱藏，按搜尋按鈕或 Enter 方觸發）
+        function searchStudents() {
+            const query = document.getElementById('searchInput').value.trim().toLowerCase();
+            const resultsArea = document.getElementById('searchResultsArea');
+            const tbody = document.getElementById('studentTableBody');
+            
+            tbody.innerHTML = '';
+            resultsArea.style.display = 'block';
+
+            const filtered = students.filter(s => 
+                s.name.toLowerCase().includes(query) || s.id.toLowerCase().includes(query)
+            );
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#888;">查無符合條件學員</td></tr>';
+                return;
+            }
+
+            filtered.forEach(std => {
+                const tr = document.createElement('tr');
+                tr.className = `student-select-item ${selectedStudentId === std.id ? 'active' : ''}`;
+                tr.onclick = () => selectStudent(std.id);
+
+                const rem = std.paidLessons - std.records.length;
+                const identityBadge = std.identity === '住戶' 
+                    ? '<span class="badge badge-resident">住戶</span>' 
+                    : '<span class="badge badge-visitor">訪客</span>';
+
+                tr.innerHTML = `
+                    <td><b>${std.id}</b></td>
+                    <td>${std.name} ${identityBadge}</td>
+                    <td>${std.paidLessons} / <span style="color: ${rem < 0 ? 'red' : 'green'}; font-weight:bold;">${rem}</span></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function handleAddStudent(e) {
+            e.preventDefault();
+            const name = document.getElementById('stdName').value.trim();
+            const id = document.getElementById('stdId').value.trim().toUpperCase();
+            const identity = document.getElementById('stdIdentity').value;
+            const payment = document.getElementById('stdPayment').value;
+            const staff = document.getElementById('stdStaff').value.trim();
+
+            if (!staff) {
+                alert('【拒絕執行】必須輸入經手同事姓名！');
+                return;
+            }
+
+            let existingStudent = students.find(s => s.id === id || s.name === name);
+
+            if (existingStudent) {
+                existingStudent.identity = identity; // 更新最新身份
+                if (payment === '已付款') {
+                    existingStudent.paidLessons += 10;
+                    existingStudent.logs.push({
+                        time: new Date().toLocaleString(),
+                        action: `加購 10 堂套票 (已付款)，學員身份: ${identity}。累計付款堂數: ${existingStudent.paidLessons}`,
+                        staff: staff,
+                        stdId: existingStudent.id,
+                        stdName: existingStudent.name
+                    });
+                    alert(`【學員已存在】已成功為 ${existingStudent.name} (${existingStudent.id}) 堆疊 10 堂已付款套票！目前總付款堂數為 ${existingStudent.paidLessons} 堂。`);
+                } else {
+                    existingStudent.logs.push({
+                        time: new Date().toLocaleString(),
+                        action: `登記未付款狀態套票，學員身份: ${identity}，堂數不變 (目前: ${existingStudent.paidLessons})`,
+                        staff: staff,
+                        stdId: existingStudent.id,
+                        stdName: existingStudent.name
+                    });
+                    alert(`【學員已存在】已記錄 ${existingStudent.name} (${existingStudent.id}) 未付款項目，堂數保持為 ${existingStudent.paidLessons} 堂。`);
+                }
+            } else {
+                const initialLessons = payment === '已付款' ? 10 : 0;
+                const newStudent = {
+                    id: id,
+                    name: name,
+                    identity: identity,
+                    paidLessons: initialLessons,
+                    records: [],
+                    logs: [{
+                        time: new Date().toLocaleString(),
+                        action: `建立學員檔案，身份: ${identity}，付款狀態: ${payment} (${initialLessons} 堂)`,
+                        staff: staff,
+                        stdId: id,
+                        stdName: name
+                    }]
+                };
+                students.push(newStudent);
+                alert(`成功新增學員 ${name} (${id})！`);
+            }
+
+            saveData();
+            document.getElementById('searchInput').value = id;
+            searchStudents();
+            selectStudent(existingStudent ? existingStudent.id : id);
+
+            document.getElementById('stdName').value = '';
+            document.getElementById('stdId').value = '';
+            document.getElementById('stdStaff').value = '';
+        }
+
+        function selectStudent(id) {
+            selectedStudentId = id;
+            searchStudents();
+            
+            const std = students.find(s => s.id === id);
+            if (!std) return;
+
+            document.getElementById('emptyPanel').style.display = 'none';
+            document.getElementById('schedulePanel').style.display = 'block';
+            
+            const badge = std.identity === '住戶' 
+                ? '<span class="badge badge-resident">住戶</span>' 
+                : '<span class="badge badge-visitor">訪客</span>';
+            document.getElementById('selectedStudentTitle').innerHTML = `學員：${std.name} (${std.id}) ${badge}`;
+
+            updateStudentStats(std);
+            renderRecords(std);
+            renderLogs(std);
+            initBatchForm();
+        }
+
+        function updateStudentStats(std) {
+            const used = std.records.length;
+            const remaining = std.paidLessons - used;
+
+            document.getElementById('statPaid').innerText = std.paidLessons;
+            document.getElementById('statUsed').innerText = used;
+            document.getElementById('statRemaining').innerText = remaining;
+            
+            if (remaining < 0) {
+                document.getElementById('statRemaining').style.color = 'red';
+            } else {
+                document.getElementById('statRemaining').style.color = 'var(--primary-color)';
+            }
+        }
+
+        // 批量預約控制 (最多 10 堂)
+        function initBatchForm() {
+            const container = document.getElementById('batchRowsContainer');
+            container.innerHTML = '';
+            batchRowCount = 0;
+            addBatchRow();
+        }
+
+        function addBatchRow() {
+            if (batchRowCount >= 10) {
+                alert('一次預約最多支援 10 堂課堂！');
+                return;
+            }
+
+            batchRowCount++;
+            const rowId = batchRowCount;
+            const container = document.getElementById('batchRowsContainer');
+            
+            const div = document.createElement('div');
+            div.className = 'batch-row';
+            div.id = `batchRow_${rowId}`;
+            div.innerHTML = `
+                <div style="font-weight:bold; color:#666; text-align:center;">#${rowId}</div>
+                <div>
+                    <input type="date" class="batch-date" id="bDate_${rowId}" onchange="handleBatchDateChange(${rowId})">
+                </div>
+                <div>
+                    <select class="batch-class" id="bClass_${rowId}">
+                        <option value="">-- 請先選日期 --</option>
+                    </select>
+                </div>
+                <div>
+                    ${rowId > 1 ? `<button type="button" class="btn-danger btn-small" onclick="removeBatchRow(${rowId})">✕</button>` : ''}
+                </div>
+            `;
+            container.appendChild(div);
+        }
+
+        function removeBatchRow(rowId) {
+            const row = document.getElementById(`batchRow_${rowId}`);
+            if (row) {
+                row.remove();
+            }
+        }
+
+        function handleBatchDateChange(rowId) {
+            const dateVal = document.getElementById(`bDate_${rowId}`).value;
+            const classSelect = document.getElementById(`bClass_${rowId}`);
+            classSelect.innerHTML = '<option value="">-- 請選擇班別 --</option>';
+
+            if (!dateVal) return;
+
+            const dayOfWeek = new Date(dateVal).getDay();
+            const availableClasses = CLASS_SCHEDULE[dayOfWeek] || [];
+
+            if (availableClasses.length === 0) {
+                classSelect.innerHTML = '<option value="">當天無開放班別</option>';
+                return;
+            }
+
+            availableClasses.forEach(cls => {
+                const opt = document.createElement('option');
+                opt.value = `${cls.name} (${cls.time})`;
+                opt.innerText = `${WEEK_NAMES[dayOfWeek]} - ${cls.name} [${cls.time}]`;
+                classSelect.appendChild(opt);
+            });
+        }
+
+        // 提交批量排課
+        function handleBatchBooking(e) {
+            e.preventDefault();
+            if (!selectedStudentId) return;
+
+            const std = students.find(s => s.id === selectedStudentId);
+            const staff = document.getElementById('batchStaff').value.trim();
+
+            if (!staff) {
+                alert('【拒絕執行】必須輸入經手同事姓名！');
+                return;
+            }
+
+            const dates = document.querySelectorAll('.batch-date');
+            const classes = document.querySelectorAll('.batch-class');
+            
+            let newBookings = [];
+            let duplicateErrors = [];
+
+            for (let i = 0; i < dates.length; i++) {
+                const d = dates[i].value;
+                const c = classes[i].value;
+
+                if (!d || !c) continue; // 跳過空的行
+
+                // 防呆 1：同批次內是否有重複
+                const inBatchDup = newBookings.some(b => b.date === d && b.classVal === c);
+                // 防呆 2：學員已有紀錄中是否有重複
+                const inRecordDup = std.records.some(r => r.date === d && r.classVal === c);
+
+                if (inBatchDup || inRecordDup) {
+                    duplicateErrors.push(`${d} ${c}`);
+                } else {
+                    newBookings.push({
+                        recId: 'REC' + (Date.now() + i),
+                        date: d,
+                        classVal: c,
+                        staff: staff
+                    });
+                }
+            }
+
+            if (duplicateErrors.length > 0) {
+                alert(`【防呆觸發 - 拒絕執行】學員已報名或重複填寫了以下課堂：\n` + duplicateErrors.join('\n'));
+                return;
+            }
+
+            if (newBookings.length === 0) {
+                alert('請至少選擇一堂有效的上課日期與班別！');
+                return;
+            }
+
+            // 新增並排序
+            std.records.push(...newBookings);
+            std.records.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            newBookings.forEach(bk => {
+                std.logs.push({
+                    time: new Date().toLocaleString(),
+                    action: `批量預約排課: ${bk.date} ${bk.classVal}`,
+                    staff: staff,
+                    stdId: std.id,
+                    stdName: std.name
+                });
+            });
+
+            saveData();
+            updateStudentStats(std);
+            renderRecords(std);
+            renderLogs(std);
+            searchStudents();
+            initBatchForm();
+            document.getElementById('batchStaff').value = '';
+
+            alert(`成功批量預約 ${newBookings.length} 堂課堂！`);
+        }
+
+        function renderRecords(std) {
+            const tbody = document.getElementById('recordTableBody');
+            tbody.innerHTML = '';
+
+            if (std.records.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#999;">目前無排課紀錄</td></tr>';
+                return;
+            }
+
+            std.records.forEach(rec => {
+                const tr = document.createElement('tr');
+                const dayOfWeek = WEEK_NAMES[new Date(rec.date).getDay()];
+
+                tr.innerHTML = `
+                    <td>${rec.date}</td>
+                    <td>${dayOfWeek}</td>
+                    <td><b>${rec.classVal}</b></td>
+                    <td>${rec.staff}</td>
+                    <td>
+                        <button class="btn-warning btn-small" onclick="openEditModal('${rec.recId}')">改期</button>
+                        <button class="btn-danger btn-small" onclick="cancelBooking('${rec.recId}')">取消/刪除</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // 改期彈窗邏輯
+        function openEditModal(recId) {
+            const std = students.find(s => s.id === selectedStudentId);
+            const rec = std.records.find(r => r.recId === recId);
+            if (!rec) return;
+
+            document.getElementById('editRecId').value = recId;
+            document.getElementById('editDate').value = rec.date;
+            document.getElementById('editStaff').value = '';
+            handleEditDateChange();
+            
+            setTimeout(() => {
+                document.getElementById('editClass').value = rec.classVal;
+            }, 50);
+
+            document.getElementById('editModal').style.display = 'flex';
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+
+        function handleEditDateChange() {
+            const dateVal = document.getElementById('editDate').value;
+            const classSelect = document.getElementById('editClass');
+            classSelect.innerHTML = '<option value="">-- 請選擇班別 --</option>';
+
+            if (!dateVal) return;
+
+            const dayOfWeek = new Date(dateVal).getDay();
+            const availableClasses = CLASS_SCHEDULE[dayOfWeek] || [];
+
+            if (availableClasses.length === 0) {
+                classSelect.innerHTML = '<option value="">當天無開放班別</option>';
+                return;
+            }
+
+            availableClasses.forEach(cls => {
+                const opt = document.createElement('option');
+                opt.value = `${cls.name} (${cls.time})`;
+                opt.innerText = `${WEEK_NAMES[dayOfWeek]} - ${cls.name} [${cls.time}]`;
+                classSelect.appendChild(opt);
+            });
+        }
+
+        function saveEditedBooking(e) {
+            e.preventDefault();
+            const recId = document.getElementById('editRecId').value;
+            const newDate = document.getElementById('editDate').value;
+            const newClass = document.getElementById('editClass').value;
+            const staff = document.getElementById('editStaff').value.trim();
+
+            if (!staff) {
+                alert('【拒絕執行】改期必須輸入經手同事姓名！');
+                return;
+            }
+
+            const std = students.find(s => s.id === selectedStudentId);
+            
+            // 防呆重複
+            const duplicateCheck = std.records.some(r => r.recId !== recId && r.date === newDate && r.classVal === newClass);
+            if (duplicateCheck) {
+                alert(`【拒絕執行】防呆觸發：學員 ${std.name} 已預約了 ${newDate} 的 ${newClass} 課堂！`);
+                return;
+            }
+
+            const rec = std.records.find(r => r.recId === recId);
+            if (rec) {
+                const oldInfo = `${rec.date} ${rec.classVal}`;
+                rec.date = newDate;
+                rec.classVal = newClass;
+                rec.staff = staff;
+
+                std.records.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                std.logs.push({
+                    time: new Date().toLocaleString(),
+                    action: `課堂改期: 從 [${oldInfo}] 修改為 [${newDate} ${newClass}]`,
+                    staff: staff,
+                    stdId: std.id,
+                    stdName: std.name
+                });
+
+                saveData();
+                renderRecords(std);
+                renderLogs(std);
+                closeEditModal();
+                alert('課堂改期成功！');
+            }
+        }
+
+        function cancelBooking(recId) {
+            const staff = prompt('【安全驗證】取消排課必須輸入經手同事姓名：');
+            if (staff === null) return;
+            if (!staff.trim()) {
+                alert('【拒絕執行】未輸入經手同事姓名，無法取消排課！');
+                return;
+            }
+
+            const std = students.find(s => s.id === selectedStudentId);
+            const recIndex = std.records.findIndex(r => r.recId === recId);
+
+            if (recIndex !== -1) {
+                const removed = std.records.splice(recIndex, 1)[0];
+                std.logs.push({
+                    time: new Date().toLocaleString(),
+                    action: `取消排課: ${removed.date} ${removed.classVal}`,
+                    staff: staff.trim(),
+                    stdId: std.id,
+                    stdName: std.name
+                });
+
+                saveData();
+                updateStudentStats(std);
+                renderRecords(std);
+                renderLogs(std);
+                searchStudents();
+                alert('已成功取消該堂預約！');
+            }
+        }
+
+        function renderLogs(std) {
+            const container = document.getElementById('studentLogs');
+            container.innerHTML = '';
+
+            [...std.logs].reverse().forEach(log => {
+                const div = document.createElement('div');
+                div.className = 'log-item';
+                div.innerHTML = `[${log.time}] <b>${log.action}</b> (經手人: <span style="color:#2e7d32;">${log.staff}</span>)`;
+                container.appendChild(div);
+            });
+        }
+
+        // 匯出 Excel (使用 SheetJS 產生分析與操作日誌雙工作表)
+        function exportToExcel() {
+            if (students.length === 0) {
+                alert('目前無任何學員或課堂資料可供匯出！');
+                return;
+            }
+
+            const LEVELS = ["Red Ball", "Orange Ball", "Green Ball", "Yellow Ball", "P&P"];
+            const monthlyStats = {}; 
+            // 結構: { "2026-09": { "Red Ball": { bookings: 0, students: Set(), residentCount: 0, visitorCount: 0 }, ... } }
+
+            const allLogs = [];
+
+            students.forEach(std => {
+                // 搜集日誌
+                std.logs.forEach(l => {
+                    allLogs.push({
+                        "操作時間": l.time,
+                        "學員編號": l.stdId || std.id,
+                        "學員姓名": l.stdName || std.name,
+                        "學員身份": std.identity || "住戶",
+                        "操作內容": l.action,
+                        "經手同事": l.staff
+                    });
+                });
+
+                // 分析排課數據
+                std.records.forEach(rec => {
+                    const monthKey = rec.date.substring(0, 7); // YYYY-MM
+                    let matchedLevel = "其他";
+                    for (let lvl of LEVELS) {
+                        if (rec.classVal.includes(lvl)) {
+                            matchedLevel = lvl;
+                            break;
+                        }
+                    }
+
+                    if (!monthlyStats[monthKey]) {
+                        monthlyStats[monthKey] = {};
+                        LEVELS.forEach(l => {
+                            monthlyStats[monthKey][l] = {
+                                bookings: 0,
+                                uniqueStudents: new Set(),
+                                residentCount: 0,
+                                visitorCount: 0
+                            };
+                        });
+                    }
+
+                    if (monthlyStats[monthKey][matchedLevel]) {
+                        const target = monthlyStats[monthKey][matchedLevel];
+                        target.bookings += 1;
+                        target.uniqueStudents.add(std.id);
+                        if (std.identity === '住戶') {
+                            target.residentCount += 1;
+                        } else {
+                            target.visitorCount += 1;
+                        }
+                    }
+                });
+            });
+
+            // 整理 Sheet 1: 課堂統計分析
+            const analyticsRows = [];
+            Object.keys(monthlyStats).sort().forEach(month => {
+                LEVELS.forEach(lvl => {
+                    const data = monthlyStats[month][lvl];
+                    analyticsRows.push({
+                        "月份": month,
+                        "班別級別": lvl,
+                        "預訂課堂總數": data.bookings,
+                        "上課學員總人數 (不重複)": data.uniqueStudents.size,
+                        "住戶預訂堂數": data.residentCount,
+                        "訪客預訂堂數": data.visitorCount
+                    });
+                });
+            });
+
+            // 建立 Worksheets
+            const wb = XLSX.utils.book_new();
+            
+            const wsAnalytics = XLSX.utils.json_to_sheet(analyticsRows.length > 0 ? analyticsRows : [{ "訊息": "暫無預約課堂數據" }]);
+            XLSX.utils.book_append_sheet(wb, wsAnalytics, "每月級別統計分析");
+
+            const wsLogs = XLSX.utils.json_to_sheet(allLogs.length > 0 ? allLogs : [{ "訊息": "暫無系統日誌" }]);
+            XLSX.utils.book_append_sheet(wb, wsLogs, "操作日誌表");
+
+            // 下載 Excel
+            XLSX.writeFile(wb, `網球套票排課及記錄系統報表_${new Date().toISOString().slice(0,10)}.xlsx`);
+        }
+    </script>
+</body>
+</html>
