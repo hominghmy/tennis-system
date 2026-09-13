@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>網球套票排課及記錄系統</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        tennis: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            yellow: '#ccff00',
+                            court: '#2d6a4f'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+
+    <script>
+        // Global Auth & UI Helper Functions defined immediately
+        window.checkAuthSession = function() {
+            const isAuth = sessionStorage.getItem('tennis_app_authenticated') === 'true';
+            const overlay = document.getElementById('loginOverlay');
+            if (isAuth) {
+                if (overlay) overlay.classList.add('hidden');
+            } else {
+                if (overlay) overlay.classList.remove('hidden');
+                const pwdInput = document.getElementById('inputPassword');
+                if (pwdInput) pwdInput.focus();
+            }
+        };
+
+        window.handleCheckPassword = function(e) {
+            if (e) e.preventDefault();
+            const pwdInput = document.getElementById('inputPassword');
+            const errorMsg = document.getElementById('loginErrorMsg');
+            if (!pwdInput) return;
+
+            if (pwdInput.value === 'coscourse') {
+                sessionStorage.setItem('tennis_app_authenticated', 'true');
+                if (errorMsg) errorMsg.classList.add('hidden');
+                pwdInput.value = '';
+                window.checkAuthSession();
+                window.showToast('驗證成功，歡迎使用網球排課系統');
+            } else {
+                if (errorMsg) errorMsg.classList.remove('hidden');
+                pwdInput.value = '';
+                pwdInput.focus();
+            }
+        };
+
+        window.lockSystem = function() {
+            sessionStorage.removeItem('tennis_app_authenticated');
+            const pwdInput = document.getElementById('inputPassword');
+            const errorMsg = document.getElementById('loginErrorMsg');
+            if (pwdInput) pwdInput.value = '';
+            if (errorMsg) errorMsg.classList.add('hidden');
+            window.checkAuthSession();
+            window.showToast('系統已鎖定', 'info');
+        };
+
+        window.switchTab = function(tab) {
+            const tabs = ['students', 'packages', 'lessons'];
+            tabs.forEach(t => {
+                const content = document.getElementById(`tabContent${t.charAt(0).toUpperCase() + t.slice(1)}`);
+                const btn = document.getElementById(`tabBtn${t.charAt(0).toUpperCase() + t.slice(1)}`);
+                if (content) {
+                    if (t === tab) {
+                        content.classList.remove('hidden');
+                    } else {
+                        content.classList.add('hidden');
+                    }
+                }
+                if (btn) {
+                    if (t === tab) {
+                        btn.className = 'px-4 py-2.5 font-semibold text-sm rounded-t-lg transition flex items-center space-x-2 bg-tennis-600 text-white shadow-sm';
+                    } else {
+                        btn.className = 'px-4 py-2.5 font-semibold text-sm rounded-t-lg transition flex items-center space-x-2 text-slate-600 hover:text-slate-900 hover:bg-slate-200';
+                    }
+                }
+            });
+        };
+
+        window.openModal = function(id) {
+            const m = document.getElementById(id);
+            if (m) m.classList.remove('hidden');
+        };
+
+        window.closeModal = function(id) {
+            const m = document.getElementById(id);
+            if (m) m.classList.add('hidden');
+        };
+
+        window.openBuyPackageModalForStudent = function(studentId) {
+            const select = document.getElementById('modalPkgStudentId');
+            if (select) select.value = studentId;
+            window.openModal('buyPackageModal');
+        };
+
+        window.setFilterToday = function() {
+            const filterInput = document.getElementById('filterDate');
+            if (filterInput) {
+                filterInput.value = new Date().toISOString().split('T')[0];
+                window.renderLessons();
+            }
+        };
+
+        window.clearFilterDate = function() {
+            const filterInput = document.getElementById('filterDate');
+            if (filterInput) {
+                filterInput.value = '';
+                window.renderLessons();
+            }
+        };
+
+        window.showToast = function(msg, type = 'success') {
+            let toast = document.getElementById('toastNotification');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'toastNotification';
+                document.body.appendChild(toast);
+            }
+            
+            let bgClass = 'bg-emerald-600';
+            let iconClass = 'fa-circle-check';
+            if (type === 'error') {
+                bgClass = 'bg-rose-600';
+                iconClass = 'fa-circle-xmark';
+            } else if (type === 'info') {
+                bgClass = 'bg-slate-800';
+                iconClass = 'fa-circle-info';
+            }
+
+            toast.className = `fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-xl text-sm font-semibold text-white ${bgClass} flex items-center space-x-2 transition-all transform translate-y-0 opacity-100`;
+            toast.innerHTML = `<i class="fa-solid ${iconClass}"></i><span>${msg}</span>`;
+            toast.style.display = 'flex';
+
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 3000);
+        };
+
+        window.updateStatus = function(type, text) {
+            const dot = document.getElementById('statusDot');
+            const txt = document.getElementById('statusText');
+            if (!dot || !txt) return;
+
+            if (type === 'online') {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400';
+                txt.innerText = text || '已即時同步至 Realtime DB';
+            } else if (type === 'connecting') {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse';
+                txt.innerText = text || '雲端連線中...';
+            } else {
+                dot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500';
+                txt.innerText = text || '連線中斷/錯誤';
+            }
+        };
+    </script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col font-sans antialiased">
+
+    <!-- Header Navbar -->
+    <header class="bg-slate-900 text-white shadow-lg sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-full bg-tennis-yellow flex items-center justify-center text-slate-900 font-bold text-xl shadow">
+                        <span>🎾</span>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold tracking-wide">網球套票排課及記錄系統</h1>
+                        <p class="text-xs text-slate-400">Tennis Coaching & Package Management</p>
+                    </div>
+                </div>
+
+                <!-- Cloud Connection & Excel Export Bar -->
+                <div class="flex items-center space-x-2 sm:space-x-3 text-xs sm:text-sm">
+                    <!-- EXCEL REPORT EXPORT BUTTON -->
+                    <button onclick="exportExcelReport()" title="匯出每月統計與操作日誌雙報表" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg border border-emerald-500 transition flex items-center space-x-1.5 text-xs font-semibold shadow">
+                        <i class="fa-solid fa-file-excel text-base"></i>
+                        <span>匯出 Excel 雙報表</span>
+                    </button>
+
+                    <div id="statusBadge" class="flex items-center space-x-2 bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
+                        <span id="statusDot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                        <span id="statusText" class="text-slate-300">雲端連線中...</span>
+                    </div>
+
+                    <!-- LOCK / LOGOUT BUTTON -->
+                    <button onclick="lockSystem()" title="鎖定系統" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition flex items-center space-x-1.5 text-xs">
+                        <i class="fa-solid fa-lock text-tennis-yellow"></i>
+                        <span class="hidden sm:inline">鎖定</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Password Protection Modal Overlay -->
+    <div id="loginOverlay" class="fixed inset-0 bg-slate-900/95 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center border border-slate-200">
+            <div class="w-16 h-16 rounded-full bg-tennis-100 text-tennis-600 mx-auto flex items-center justify-center text-3xl mb-4 shadow-inner">
+                <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <h2 class="text-xl font-bold text-slate-800">網球套票排課系統</h2>
+            <p class="text-xs text-slate-500 mt-1 mb-6">請輸入系統存取密碼以解鎖使用</p>
+            
+            <form onsubmit="handleCheckPassword(event)" class="space-y-4">
+                <div>
+                    <input type="password" id="inputPassword" placeholder="請輸入驗證密碼..." required autofocus
+                           class="w-full px-4 py-3 border border-slate-300 rounded-xl text-center text-base tracking-wider focus:ring-2 focus:ring-tennis-500 focus:outline-none shadow-sm">
+                </div>
+                <div id="loginErrorMsg" class="hidden text-xs text-rose-500 font-semibold flex items-center justify-center space-x-1">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span>密碼錯誤，請重新輸入</span>
+                </div>
+                <button type="submit" class="w-full py-3 bg-tennis-600 hover:bg-tennis-700 text-white font-bold rounded-xl transition shadow-lg hover:shadow-xl text-sm flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-key"></i>
+                    <span>解鎖進入系統</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Metrics Dashboard (3 Items) -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-medium text-slate-500">學員總數</p>
+                    <h3 id="statTotalStudents" class="text-2xl font-bold text-slate-800 mt-1">0</h3>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center text-lg">
+                    <i class="fa-solid fa-users"></i>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-medium text-slate-500">有效套票堂數</p>
+                    <h3 id="statTotalSessions" class="text-2xl font-bold text-emerald-600 mt-1">0 堂</h3>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg">
+                    <i class="fa-solid fa-ticket"></i>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                    <p class="text-xs font-medium text-slate-500">今日課程</p>
+                    <h3 id="statTodayLessons" class="text-2xl font-bold text-purple-600 mt-1">0 堂</h3>
+                </div>
+                <div class="w-10 h-10 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center text-lg">
+                    <i class="fa-solid fa-calendar-day"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Navigation Bar (Reordered: Students -> Packages -> Lessons at Far Right) -->
+        <div class="flex space-x-2 border-b border-slate-200 overflow-x-auto pb-1 custom-scrollbar">
+            <button id="tabBtnStudents" onclick="switchTab('students')" class="px-4 py-2.5 font-semibold text-sm rounded-t-lg transition flex items-center space-x-2 bg-tennis-600 text-white shadow-sm">
+                <i class="fa-solid fa-user-graduate"></i>
+                <span>學員與套票管理</span>
+            </button>
+            <button id="tabBtnPackages" onclick="switchTab('packages')" class="px-4 py-2.5 font-semibold text-sm rounded-t-lg transition flex items-center space-x-2 text-slate-600 hover:text-slate-900 hover:bg-slate-200">
+                <i class="fa-solid fa-receipt"></i>
+                <span>購買記錄</span>
+            </button>
+            <button id="tabBtnLessons" onclick="switchTab('lessons')" class="px-4 py-2.5 font-semibold text-sm rounded-t-lg transition flex items-center space-x-2 text-slate-600 hover:text-slate-900 hover:bg-slate-200">
+                <i class="fa-solid fa-calendar-check"></i>
+                <span>課程與排課</span>
+            </button>
+        </div>
+
+        <!-- TAB 1: 學員與套票 (Default Active) -->
+        <div id="tabContentStudents" class="space-y-6">
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div class="relative w-full sm:w-72">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400"></i>
+                    <input type="text" id="searchStudent" oninput="renderStudents()" placeholder="搜尋學員姓名、電話或級別..." class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                </div>
+                <button onclick="openModal('addStudentModal')" class="w-full sm:w-auto px-4 py-2 bg-tennis-600 hover:bg-tennis-700 text-white rounded-lg font-medium text-sm transition shadow flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-user-plus"></i>
+                    <span>新增學員</span>
+                </button>
+            </div>
+
+            <!-- Student Grid -->
+            <div id="studentGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- JS Dynamically Populated -->
+            </div>
+        </div>
+
+        <!-- TAB 2: 購買記錄 -->
+        <div id="tabContentPackages" class="space-y-6 hidden">
+            <div class="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <h3 class="font-bold text-slate-800 flex items-center space-x-2">
+                    <i class="fa-solid fa-receipt text-amber-600"></i>
+                    <span>套票購買歷史紀錄</span>
+                </h3>
+                <button onclick="openModal('buyPackageModal')" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium text-sm transition shadow flex items-center space-x-2">
+                    <i class="fa-solid fa-cart-plus"></i>
+                    <span>新增套票購買</span>
+                </button>
+            </div>
+
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-600">
+                        <thead class="bg-slate-100 text-slate-700 uppercase text-xs font-semibold">
+                            <tr>
+                                <th class="p-3.5">購買日期</th>
+                                <th class="p-3.5">學員姓名</th>
+                                <th class="p-3.5">級別/身分</th>
+                                <th class="p-3.5">套票名稱/說明</th>
+                                <th class="p-3.5 text-center">購買堂數</th>
+                                <th class="p-3.5 text-right">金額 ($)</th>
+                                <th class="p-3.5 text-center">付款狀態</th>
+                                <th class="p-3.5 text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="packagesTableBody" class="divide-y divide-slate-100">
+                            <!-- JS Dynamically Populated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: 課程與排課 (Far Right) -->
+        <div id="tabContentLessons" class="space-y-6 hidden">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div class="flex items-center space-x-3 w-full sm:w-auto">
+                    <input type="date" id="filterDate" onchange="renderLessons()" class="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                    <button onclick="setFilterToday()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition">今日</button>
+                    <button onclick="clearFilterDate()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition">全部日期</button>
+                </div>
+                <button onclick="openModal('addLessonModal')" class="w-full sm:w-auto px-4 py-2 bg-tennis-600 hover:bg-tennis-700 text-white rounded-lg font-medium text-sm transition shadow flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>新增預約排課</span>
+                </button>
+            </div>
+
+            <!-- Lessons Table -->
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <h3 class="font-bold text-slate-800 flex items-center space-x-2">
+                        <i class="fa-solid fa-list-check text-tennis-600"></i>
+                        <span>排課清單</span>
+                    </h3>
+                    <span id="lessonCountBadge" class="text-xs bg-slate-200 text-slate-700 px-2.5 py-1 rounded-full font-medium">共 0 堂</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm text-slate-600">
+                        <thead class="bg-slate-100 text-slate-700 uppercase text-xs font-semibold tracking-wider">
+                            <tr>
+                                <th class="p-3.5">日期時間</th>
+                                <th class="p-3.5">學員姓名</th>
+                                <th class="p-3.5">級別 / 身分</th>
+                                <th class="p-3.5">地點/球場</th>
+                                <th class="p-3.5">訓練主題/備註</th>
+                                <th class="p-3.5 text-center">狀態</th>
+                                <th class="p-3.5 text-right">操作 / 簽到扣堂</th>
+                            </tr>
+                        </thead>
+                        <tbody id="lessonsTableBody" class="divide-y divide-slate-100">
+                            <!-- JS Dynamically populated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal: 新增學員 -->
+    <div id="addStudentModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <button onclick="closeModal('addStudentModal')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">✕</button>
+            <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center space-x-2">
+                <i class="fa-solid fa-user-plus text-tennis-600"></i>
+                <span>新增學員資料</span>
+            </h3>
+            <form onsubmit="handleCreateStudent(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">學員姓名 *</label>
+                    <input type="text" id="modalStudentName" required placeholder="例如：王大明" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">訓練級別 *</label>
+                        <select id="modalStudentLevel" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                            <option value="Red Ball">Red Ball</option>
+                            <option value="Orange Ball">Orange Ball</option>
+                            <option value="Green Ball">Green Ball</option>
+                            <option value="Yellow Ball">Yellow Ball</option>
+                            <option value="P&P">P&P (Play & Practice)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">住戶/訪客身分 *</label>
+                        <select id="modalStudentIdentity" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                            <option value="住戶">住戶 (Resident)</option>
+                            <option value="訪客">訪客 (Visitor)</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">聯絡電話</label>
+                    <input type="tel" id="modalStudentPhone" placeholder="例如：0912-345678" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">經手同事姓名 *</label>
+                    <input type="text" id="modalStudentOperator" required placeholder="例如：張教練" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">備註 / 訓練紀錄</label>
+                    <textarea id="modalStudentNotes" rows="2" placeholder="例如：慣用右手，正手拍較熟練" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none"></textarea>
+                </div>
+                <div class="pt-2 flex justify-end space-x-2">
+                    <button type="button" onclick="closeModal('addStudentModal')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium">取消</button>
+                    <button type="submit" class="px-4 py-2 bg-tennis-600 hover:bg-tennis-700 text-white rounded-lg text-sm font-medium shadow">儲存建立</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: 新增排課 -->
+    <div id="addLessonModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <button onclick="closeModal('addLessonModal')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">✕</button>
+            <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center space-x-2">
+                <i class="fa-solid fa-calendar-plus text-tennis-600"></i>
+                <span>新增課程排課</span>
+            </h3>
+            <form onsubmit="handleCreateLesson(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">選擇學員 *</label>
+                    <select id="modalLessonStudentId" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                        <!-- JS Dynamic Populated -->
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">上課日期 *</label>
+                        <input type="date" id="modalLessonDate" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">時間 *</label>
+                        <input type="time" id="modalLessonTime" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">球場/地點</label>
+                    <input type="text" id="modalLessonLocation" placeholder="例如：大安運動中心 A場" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">訓練主題 / 備註</label>
+                    <input type="text" id="modalLessonTopic" placeholder="例如：正手發力與截擊" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">經手同事姓名 *</label>
+                    <input type="text" id="modalLessonOperator" required placeholder="例如：張教練" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                </div>
+                <div class="pt-2 flex justify-end space-x-2">
+                    <button type="button" onclick="closeModal('addLessonModal')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium">取消</button>
+                    <button type="submit" class="px-4 py-2 bg-tennis-600 hover:bg-tennis-700 text-white rounded-lg text-sm font-medium shadow">預約排課</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: 新增/購買套票 -->
+    <div id="buyPackageModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <button onclick="closeModal('buyPackageModal')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">✕</button>
+            <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center space-x-2">
+                <i class="fa-solid fa-cart-plus text-amber-600"></i>
+                <span>學員購買/儲值套票</span>
+            </h3>
+            <form onsubmit="handleBuyPackage(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">購買學員 *</label>
+                    <select id="modalPkgStudentId" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                        <!-- JS Dynamic Populated -->
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">購買堂數 *</label>
+                        <input type="number" id="modalPkgCount" min="1" value="10" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">總費用 ($) *</label>
+                        <input type="number" id="modalPkgPrice" min="0" value="12000" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">套票名稱/說明</label>
+                    <input type="text" id="modalPkgName" placeholder="例如：標準10堂一對一課程" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">購買日期</label>
+                        <input type="date" id="modalPkgDate" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">付款狀態</label>
+                        <select id="modalPkgPaidStatus" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                            <option value="已付款">已付款</option>
+                            <option value="未付款">未付款</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">經手同事姓名 *</label>
+                    <input type="text" id="modalPkgOperator" required placeholder="例如：張教練" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                </div>
+                <div class="pt-2 flex justify-end space-x-2">
+                    <button type="button" onclick="closeModal('buyPackageModal')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium">取消</button>
+                    <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium shadow">確認儲值</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: 改期 / 編輯課程 -->
+    <div id="editLessonModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <button onclick="closeModal('editLessonModal')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">✕</button>
+            <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center space-x-2">
+                <i class="fa-solid fa-pen-to-square text-tennis-600"></i>
+                <span>改期 / 編輯排課內容</span>
+            </h3>
+            <form onsubmit="handleUpdateLesson(event)" class="space-y-4">
+                <input type="hidden" id="editLessonId">
+                <input type="hidden" id="editLessonStudentId">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">學員姓名</label>
+                    <input type="text" id="editLessonStudentName" readonly class="w-full px-3 py-2 bg-slate-100 border border-slate-300 rounded-lg text-sm text-slate-600">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">上課日期 *</label>
+                        <input type="date" id="editLessonDate" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">時間 *</label>
+                        <input type="time" id="editLessonTime" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">球場/地點</label>
+                    <input type="text" id="editLessonLocation" placeholder="例如：大安運動中心 A場" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">訓練主題 / 備註</label>
+                    <input type="text" id="editLessonTopic" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">課程狀態</label>
+                    <select id="editLessonStatus" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                        <option value="已排定">已排定</option>
+                        <option value="已完成">已完成 (簽到扣堂)</option>
+                        <option value="請假/取消">請假/取消</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">經手同事姓名 *</label>
+                    <input type="text" id="editLessonOperator" required placeholder="例如：張教練" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none">
+                </div>
+                <div class="pt-2 flex justify-end space-x-2">
+                    <button type="button" onclick="closeModal('editLessonModal')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium">取消</button>
+                    <button type="submit" class="px-4 py-2 bg-tennis-600 hover:bg-tennis-700 text-white rounded-lg text-sm font-medium shadow">儲存修改</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: 操作確認 (刪除/簽到時要求經手人) -->
+    <div id="actionConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl relative">
+            <button onclick="closeModal('actionConfirmModal')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">✕</button>
+            <h3 id="actionConfirmTitle" class="text-lg font-bold text-slate-800 mb-2 flex items-center space-x-2">
+                <i class="fa-solid fa-user-check text-tennis-600"></i>
+                <span>操作確認</span>
+            </h3>
+            <p id="actionConfirmDesc" class="text-xs text-slate-600 mb-4">請輸入經手同事姓名以完成此動作：</p>
+            <form onsubmit="handleActionConfirmSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">經手同事姓名 *</label>
+                    <input type="text" id="actionConfirmOperator" required placeholder="例如：張教練" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-tennis-500 focus:outline-none" autofocus>
+                </div>
+                <div class="pt-2 flex justify-end space-x-2">
+                    <button type="button" onclick="closeModal('actionConfirmModal')" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium">取消</button>
+                    <button type="submit" id="actionConfirmSubmitBtn" class="px-4 py-2 bg-tennis-600 hover:bg-tennis-700 text-white rounded-lg text-sm font-medium shadow">確認執行</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Firebase JS SDK (v11 ES Module) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getDatabase, ref, set, onValue, push, remove, update } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBqEsknReIfjSqNR8iwQarzC8Yq5VzFaZA",
+            authDomain: "tennis2-aab4c.firebaseapp.com",
+            projectId: "tennis2-aab4c",
+            storageBucket: "tennis2-aab4c.firebasestorage.app",
+            messagingSenderId: "823332152513",
+            appId: "1:823332152513:web:8410866ca57d4ea1d3a040",
+            measurementId: "G-W9R6CRTYQM",
+            databaseURL: "https://tennis2-aab4c-default-rtdb.firebaseio.com"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getDatabase(app);
+
+        // Global App State Store
+        window.appState = {
+            students: {},
+            lessons: {},
+            packages: {},
+            logs: {}
+        };
+
+        // Write Activity Log to Firebase with explicit operator name
+        window.writeLogToCloud = async function(actionType, studentName, details, operator) {
+            try {
+                const logRef = push(ref(db, 'tennis_app/logs'));
+                const now = new Date();
+                const timeStr = now.getFullYear() + '-' +
+                    String(now.getMonth() + 1).padStart(2, '0') + '-' +
+                    String(now.getDate()).padStart(2, '0') + ' ' +
+                    String(now.getHours()).padStart(2, '0') + ':' +
+                    String(now.getMinutes()).padStart(2, '0') + ':' +
+                    String(now.getSeconds()).padStart(2, '0');
+
+                await set(logRef, {
+                    id: logRef.key,
+                    timestamp: timeStr,
+                    operator: operator || '教練組',
+                    actionType: actionType,
+                    studentName: studentName || '-',
+                    details: details || ''
+                });
+            } catch (err) {
+                console.error("Failed to record log:", err);
+            }
+        };
+
+        async function initFirebase() {
+            window.updateStatus('connecting', '正在連線 Realtime Database...');
+            try {
+                await signInAnonymously(auth);
+            } catch (err) {
+                console.warn('Auth Warning:', err);
+            }
+
+            const dbRef = ref(db, 'tennis_app');
+            onValue(dbRef, (snapshot) => {
+                const data = snapshot.val() || {};
+                window.appState.students = data.students || {};
+                window.appState.lessons = data.lessons || {};
+                window.appState.packages = data.packages || {};
+                window.appState.logs = data.logs || {};
+
+                window.updateStatus('online', '已即時同步至 Realtime DB');
+                window.renderAll();
+            }, (error) => {
+                console.error("Database connection error:", error);
+                window.updateStatus('error', '權限或連線失敗');
+                window.showToast('雲端讀取失敗，請確認資料庫規則', 'error');
+            });
+        }
+
+        // Cloud Data Mutators
+        window.saveStudentToCloud = async function(studentData, operator) {
+            const newRef = push(ref(db, 'tennis_app/students'));
+            await set(newRef, { ...studentData, id: newRef.key, createdAt: Date.now() });
+            await window.writeLogToCloud('學員開戶', studentData.name, `新增學員（級別: ${studentData.level || 'P&P'}, 身分: ${studentData.identity || '住戶'}）`, operator);
+        };
+
+        window.saveLessonToCloud = async function(lessonData, operator) {
+            const newRef = push(ref(db, 'tennis_app/lessons'));
+            await set(newRef, { ...lessonData, id: newRef.key, createdAt: Date.now() });
+            const student = window.appState.students[lessonData.studentId] || { name: '未知學員' };
+            await window.writeLogToCloud('預訂課堂', student.name, `預約課堂：${lessonData.date} ${lessonData.time || ''} 地點: ${lessonData.location || '未指定'} Topic: ${lessonData.topic || '-'}`, operator);
+        };
+
+        window.updateLessonInCloud = async function(lessonId, updatedData, operator) {
+            const oldLesson = window.appState.lessons[lessonId] || {};
+            const oldStatus = oldLesson.status || '';
+            const newStatus = updatedData.status;
+            const student = window.appState.students[updatedData.studentId] || { name: '未知學員' };
+
+            await update(ref(db, `tennis_app/lessons/${lessonId}`), updatedData);
+
+            if (updatedData.studentId && window.appState.students[updatedData.studentId]) {
+                let currentSessions = student.remainingSessions || 0;
+                if (oldStatus !== '已完成' && newStatus === '已完成') {
+                    currentSessions = Math.max(0, currentSessions - 1);
+                } else if (oldStatus === '已完成' && newStatus !== '已完成') {
+                    currentSessions = currentSessions + 1;
+                }
+                await update(ref(db, `tennis_app/students/${updatedData.studentId}`), { remainingSessions: currentSessions });
+            }
+
+            let detailMsg = `改期/更新課程：原日期 ${oldLesson.date || '-'} ${oldLesson.time || ''} 變更為 ${updatedData.date} ${updatedData.time || ''} (地點: ${updatedData.location || '未指定'})`;
+            if (oldStatus !== newStatus) {
+                detailMsg += `，狀態由「${oldStatus}」變更為「${newStatus}」`;
+            }
+
+            await window.writeLogToCloud('改期/更新課堂', student.name, detailMsg, operator);
+        };
+
+        window.savePackageToCloud = async function(pkgData, operator) {
+            const newRef = push(ref(db, 'tennis_app/packages'));
+            const pkgId = newRef.key;
+            await set(newRef, { ...pkgData, id: pkgId, createdAt: Date.now() });
+
+            const studentId = pkgData.studentId;
+            const currentStudent = window.appState.students[studentId];
+            if (currentStudent) {
+                const currentRemaining = currentStudent.remainingSessions || 0;
+                const newRemaining = currentRemaining + Number(pkgData.count);
+                await update(ref(db, `tennis_app/students/${studentId}`), {
+                    remainingSessions: newRemaining
+                });
+                await window.writeLogToCloud('加購套票', currentStudent.name, `購買套票：${pkgData.name}，堂數 +${pkgData.count}堂，金額 $${pkgData.price}`, operator);
+            }
+        };
+
+        window.updateLessonStatusInCloud = async function(lessonId, newStatus, studentId, operator) {
+            const currentLesson = window.appState.lessons[lessonId];
+            const oldStatus = currentLesson ? currentLesson.status : '';
+            const student = window.appState.students[studentId] || { name: '未知學員' };
+
+            await update(ref(db, `tennis_app/lessons/${lessonId}`), { status: newStatus });
+
+            if (studentId && window.appState.students[studentId]) {
+                let currentSessions = student.remainingSessions || 0;
+                if (oldStatus !== '已完成' && newStatus === '已完成') {
+                    currentSessions = Math.max(0, currentSessions - 1);
+                } else if (oldStatus === '已完成' && newStatus !== '已完成') {
+                    currentSessions = currentSessions + 1;
+                }
+                await update(ref(db, `tennis_app/students/${studentId}`), { remainingSessions: currentSessions });
+            }
+
+            const actionLabel = newStatus === '已完成' ? '簽到扣堂' : '課堂狀態變更';
+            await window.writeLogToCloud(actionLabel, student.name, `日期: ${currentLesson.date}，狀態由「${oldStatus}」更新為「${newStatus}」`, operator);
+        };
+
+        window.deleteLessonFromCloud = async function(lessonId, operator) {
+            const currentLesson = window.appState.lessons[lessonId];
+            if (!currentLesson) return;
+            const student = window.appState.students[currentLesson.studentId] || { name: '未知學員' };
+            await remove(ref(db, `tennis_app/lessons/${lessonId}`));
+            await window.writeLogToCloud('取消/刪除課堂', student.name, `刪除 ${currentLesson.date} 排課紀錄`, operator);
+        };
+
+        window.deleteStudentFromCloud = async function(studentId, operator) {
+            const student = window.appState.students[studentId];
+            if (!student) return;
+            await remove(ref(db, `tennis_app/students/${studentId}`));
+            await window.writeLogToCloud('刪除學員', student.name, `刪除學員檔案及其相關資料`, operator);
+        };
+
+        window.deletePackageFromCloud = async function(pkgId, operator) {
+            const pkg = window.appState.packages[pkgId];
+            if (!pkg) return;
+            const student = window.appState.students[pkg.studentId] || { name: '未知學員' };
+            await remove(ref(db, `tennis_app/packages/${pkgId}`));
+            await window.writeLogToCloud('刪除套票紀錄', student.name, `刪除購買紀錄 ${pkg.name || ''} (${pkg.count}堂)`, operator);
+        };
+
+        window.addEventListener('DOMContentLoaded', () => {
+            window.checkAuthSession();
+            initFirebase();
+            document.getElementById('modalLessonDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('modalPkgDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('filterDate').value = new Date().toISOString().split('T')[0];
+        });
+    </script>
+
+    <script>
+        // Operator Modal Confirmation Callback Handler
+        window.pendingActionCallback = null;
+
+        window.promptOperatorConfirm = function(title, desc, callback, btnText = '確認執行', btnClass = 'bg-tennis-600 hover:bg-tennis-700') {
+            document.getElementById('actionConfirmTitle').innerHTML = `<i class="fa-solid fa-user-check text-tennis-600"></i><span>${title}</span>`;
+            document.getElementById('actionConfirmDesc').innerText = desc;
+            const operatorInput = document.getElementById('actionConfirmOperator');
+            if (operatorInput) operatorInput.value = '';
+            const submitBtn = document.getElementById('actionConfirmSubmitBtn');
+            if (submitBtn) {
+                submitBtn.innerText = btnText;
+                submitBtn.className = `px-4 py-2 ${btnClass} text-white rounded-lg text-sm font-medium shadow`;
+            }
+            window.pendingActionCallback = callback;
+            window.openModal('actionConfirmModal');
+        };
+
+        window.handleActionConfirmSubmit = function(e) {
+            e.preventDefault();
+            const operator = document.getElementById('actionConfirmOperator').value.trim();
+            if (!operator) return;
+            if (typeof window.pendingActionCallback === 'function') {
+                window.pendingActionCallback(operator);
+            }
+            window.closeModal('actionConfirmModal');
+        };
+
+        window.promptDeleteStudent = function(studentId) {
+            const student = window.appState.students[studentId];
+            if (!student) return;
+            window.promptOperatorConfirm(
+                '刪除學員檔案',
+                `確定要刪除學員「${student.name}」及其相關紀錄嗎？此動作無法復原。`,
+                async (operator) => {
+                    await window.deleteStudentFromCloud(studentId, operator);
+                    window.showToast(`已刪除學員：${student.name}`);
+                },
+                '確認刪除',
+                'bg-rose-600 hover:bg-rose-700'
+            );
+        };
+
+        window.promptDeletePackage = function(pkgId) {
+            const pkg = window.appState.packages[pkgId];
+            if (!pkg) return;
+            const student = window.appState.students[pkg.studentId] || { name: '未知學員' };
+            window.promptOperatorConfirm(
+                '刪除套票紀錄',
+                `確定要刪除「${student.name}」的這筆套票紀錄嗎？`,
+                async (operator) => {
+                    await window.deletePackageFromCloud(pkgId, operator);
+                    window.showToast('已刪除套票紀錄');
+                },
+                '確認刪除',
+                'bg-rose-600 hover:bg-rose-700'
+            );
+        };
+
+        window.promptDeleteLesson = function(lessonId) {
+            const lesson = window.appState.lessons[lessonId];
+            if (!lesson) return;
+            const student = window.appState.students[lesson.studentId] || { name: '未知學員' };
+            window.promptOperatorConfirm(
+                '取消 / 刪除排課',
+                `確定要刪除「${student.name}」於 ${lesson.date} ${lesson.time || ''} 的課程紀錄嗎？`,
+                async (operator) => {
+                    await window.deleteLessonFromCloud(lessonId, operator);
+                    window.showToast('已刪除課程紀錄');
+                },
+                '確認刪除',
+                'bg-rose-600 hover:bg-rose-700'
+            );
+        };
+
+        window.promptAttendance = function(lessonId, newStatus, studentId) {
+            const lesson = window.appState.lessons[lessonId];
+            const student = window.appState.students[studentId] || { name: '未知學員' };
+            const label = newStatus === '已完成' ? '簽到扣堂' : '重置課程狀態';
+            window.promptOperatorConfirm(
+                label,
+                `將學員「${student.name}」於 ${lesson.date} 的課程狀態更新為「${newStatus}」：`,
+                async (operator) => {
+                    await window.updateLessonStatusInCloud(lessonId, newStatus, studentId, operator);
+                    window.showToast(`已完成${label}`);
+                }
+            );
+        };
+
+        window.openEditLessonModal = function(lessonId) {
+            const lesson = window.appState.lessons[lessonId];
+            if (!lesson) return;
+            const student = window.appState.students[lesson.studentId] || { name: '未知學員' };
+
+            document.getElementById('editLessonId').value = lessonId;
+            document.getElementById('editLessonStudentId').value = lesson.studentId || '';
+            document.getElementById('editLessonStudentName').value = student.name || '未知學員';
+            document.getElementById('editLessonDate').value = lesson.date || '';
+            document.getElementById('editLessonTime').value = lesson.time || '';
+            document.getElementById('editLessonLocation').value = lesson.location || '';
+            document.getElementById('editLessonTopic').value = lesson.topic || '';
+            document.getElementById('editLessonStatus').value = lesson.status || '已排定';
+            document.getElementById('editLessonOperator').value = '';
+
+            window.openModal('editLessonModal');
+        };
+
+        window.handleUpdateLesson = async function(e) {
+            e.preventDefault();
+            const lessonId = document.getElementById('editLessonId').value;
+            const studentId = document.getElementById('editLessonStudentId').value;
+            const date = document.getElementById('editLessonDate').value;
+            const time = document.getElementById('editLessonTime').value;
+            const location = document.getElementById('editLessonLocation').value.trim();
+            const topic = document.getElementById('editLessonTopic').value.trim();
+            const status = document.getElementById('editLessonStatus').value;
+            const operator = document.getElementById('editLessonOperator').value.trim();
+
+            if (!lessonId || !operator) return;
+
+            await window.updateLessonInCloud(lessonId, { studentId, date, time, location, topic, status }, operator);
+            window.closeModal('editLessonModal');
+            window.showToast('排課內容 / 改期紀錄已成功更新！');
+        };
+
+        // Render Functions
+        window.renderAll = function() {
+            window.renderMetrics();
+            window.renderStudents();
+            window.renderPackages();
+            window.renderLessons();
+            window.populateStudentDropdowns();
+        };
+
+        window.renderMetrics = function() {
+            const students = Object.values(window.appState.students || {});
+            const lessons = Object.values(window.appState.lessons || {});
+
+            const totalStuds = document.getElementById('statTotalStudents');
+            const totalSess = document.getElementById('statTotalSessions');
+            const todayLess = document.getElementById('statTodayLessons');
+
+            if (totalStuds) totalStuds.innerText = students.length;
+            const totalRemaining = students.reduce((acc, s) => acc + (Number(s.remainingSessions) || 0), 0);
+            if (totalSess) totalSess.innerText = `${totalRemaining} 堂`;
+            const todayStr = new Date().toISOString().split('T')[0];
+            const todayCount = lessons.filter(l => l.date === todayStr).length;
+            if (todayLess) todayLess.innerText = `${todayCount} 堂`;
+        };
+
+        window.renderStudents = function() {
+            const grid = document.getElementById('studentGrid');
+            if (!grid) return;
+
+            const searchInput = document.getElementById('searchStudent');
+            const search = (searchInput ? searchInput.value : '').toLowerCase();
+            let students = Object.values(window.appState.students || {});
+
+            if (search) {
+                students = students.filter(s =>
+                    (s.name && s.name.toLowerCase().includes(search)) ||
+                    (s.phone && s.phone.includes(search)) ||
+                    (s.level && s.level.toLowerCase().includes(search)) ||
+                    (s.identity && s.identity.includes(search))
+                );
+            }
+
+            if (students.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full text-center py-12 text-slate-400 bg-white rounded-xl border border-slate-200">
+                        <i class="fa-solid fa-user-slash text-4xl mb-2 block"></i>
+                        尚無學員資料或查無符合結果
+                    </div>`;
+                return;
+            }
+
+            grid.innerHTML = students.map(s => {
+                const remaining = s.remainingSessions || 0;
+                const isWarning = remaining <= 1;
+
+                return `
+                    <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition relative flex flex-col justify-between">
+                        <div>
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="flex items-center space-x-3">
+                                    <div class="w-10 h-10 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-base">
+                                        ${s.name ? s.name.charAt(0) : '?'}
+                                    </div>
+                                    <div>
+                                        <div class="flex items-center space-x-1.5">
+                                            <h4 class="font-bold text-slate-800 text-base">${s.name || '無名氏'}</h4>
+                                        </div>
+                                        <p class="text-xs text-slate-500 mt-0.5"><i class="fa-solid fa-phone mr-1"></i>${s.phone || '無電話紀錄'}</p>
+                                    </div>
+                                </div>
+                                <button onclick="window.promptDeleteStudent('${s.id}')" class="text-slate-300 hover:text-rose-500 p-1 text-sm" title="刪除學員">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
+                            </div>
+
+                            <div class="flex items-center space-x-2 my-2">
+                                <span class="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold text-xs border border-blue-200">${s.level || 'P&P'}</span>
+                                <span class="px-2 py-0.5 rounded-full ${s.identity === '訪客' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-100 text-slate-700 border-slate-200'} font-medium text-xs border">${s.identity || '住戶'}</span>
+                            </div>
+
+                            ${s.notes ? `<p class="text-xs bg-slate-50 text-slate-600 p-2 rounded-lg mb-3">💡 ${s.notes}</p>` : ''}
+                        </div>
+
+                        <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
+                            <div>
+                                <p class="text-xs text-slate-400">剩餘套票堂數</p>
+                                <p class="text-xl font-extrabold ${isWarning ? 'text-rose-600' : 'text-emerald-600'}">
+                                    ${remaining} <span class="text-xs font-normal text-slate-500">堂</span>
+                                </p>
+                            </div>
+                            <button onclick="openBuyPackageModalForStudent('${s.id}')" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+                                <i class="fa-solid fa-cart-plus mr-1"></i>儲值
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        };
+
+        window.renderPackages = function() {
+            const tbody = document.getElementById('packagesTableBody');
+            if (!tbody) return;
+
+            const packages = Object.values(window.appState.packages || {});
+            packages.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+            if (packages.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="text-center py-8 text-slate-400">
+                            無套票購買記錄
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            tbody.innerHTML = packages.map(p => {
+                const student = window.appState.students[p.studentId] || { name: '未知學員', level: 'P&P', identity: '住戶' };
+                return `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="p-3.5 text-xs text-slate-600 font-mono">${p.date || '-'}</td>
+                        <td class="p-3.5 font-medium text-slate-800">${student.name}</td>
+                        <td class="p-3.5 text-xs">
+                            <span class="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold">${student.level || 'P&P'}</span>
+                            <span class="px-1.5 py-0.5 rounded ${student.identity === '訪客' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-700'} font-medium ml-1">${student.identity || '住戶'}</span>
+                        </td>
+                        <td class="p-3.5 text-xs text-slate-600">${p.name || '通用套票'}</td>
+                        <td class="p-3.5 text-center font-bold text-emerald-600">+${p.count} 堂</td>
+                        <td class="p-3.5 text-right font-mono font-semibold text-slate-800">$${Number(p.price || 0).toLocaleString()}</td>
+                        <td class="p-3.5 text-center">
+                            <span class="px-2 py-0.5 text-xs rounded-full ${p.paidStatus === '已付款' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} font-medium">
+                                ${p.paidStatus || '已付款'}
+                            </span>
+                        </td>
+                        <td class="p-3.5 text-right">
+                            <button onclick="window.promptDeletePackage('${p.id}')" class="text-rose-500 hover:text-rose-700 text-xs" title="刪除套票紀錄">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        };
+
+        window.renderLessons = function() {
+            const tbody = document.getElementById('lessonsTableBody');
+            if (!tbody) return;
+
+            const filterInput = document.getElementById('filterDate');
+            const filterDate = filterInput ? filterInput.value : '';
+            let lessons = Object.values(window.appState.lessons || {});
+
+            if (filterDate) {
+                lessons = lessons.filter(l => l.date === filterDate);
+            }
+            lessons.sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+
+            const badge = document.getElementById('lessonCountBadge');
+            if (badge) badge.innerText = `共 ${lessons.length} 堂`;
+
+            if (lessons.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="text-center py-8 text-slate-400">
+                            <i class="fa-solid fa-calendar-xmark text-3xl mb-2 block"></i>
+                            無符合條件之排課記錄
+                        </td>
+                    </tr>`;
+                return;
+            }
+
+            tbody.innerHTML = lessons.map(l => {
+                const student = window.appState.students[l.studentId] || { name: '未知學員', level: 'P&P', identity: '住戶' };
+                let statusBadge = '';
+                if (l.status === '已完成') {
+                    statusBadge = `<span class="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-semibold"><i class="fa-solid fa-check mr-1"></i>已簽到扣堂</span>`;
+                } else if (l.status === '請假/取消') {
+                    statusBadge = `<span class="bg-rose-100 text-rose-800 text-xs px-2.5 py-1 rounded-full font-semibold">請假/取消</span>`;
+                } else {
+                    statusBadge = `<span class="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-semibold">已排定預約</span>`;
+                }
+
+                return `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="p-3.5">
+                            <div class="font-bold text-slate-800">${l.date}</div>
+                            <div class="text-xs text-slate-500"><i class="fa-regular fa-clock mr-1"></i>${l.time || '未指定時間'}</div>
+                        </td>
+                        <td class="p-3.5 font-medium text-slate-900">${student.name}</td>
+                        <td class="p-3.5 text-xs">
+                            <span class="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold mr-1">${student.level || 'P&P'}</span>
+                            <span class="px-2 py-0.5 rounded ${student.identity === '訪客' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-700'} font-medium">${student.identity || '住戶'}</span>
+                        </td>
+                        <td class="p-3.5 text-xs text-slate-600">${l.location || '未定球場'}</td>
+                        <td class="p-3.5 text-xs text-slate-600">${l.topic || '-'}</td>
+                        <td class="p-3.5 text-center">${statusBadge}</td>
+                        <td class="p-3.5 text-right space-x-1">
+                            <button onclick="openEditLessonModal('${l.id}')" title="改期/編輯課程內容" class="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg font-medium transition shadow-sm">
+                                <i class="fa-solid fa-pen-to-square mr-1"></i>改期
+                            </button>
+                            ${l.status !== '已完成' ? `
+                                <button onclick="promptAttendance('${l.id}', '已完成', '${l.studentId}')" title="完成課程並自動扣堂" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs rounded-lg font-medium transition shadow-sm">
+                                    <i class="fa-solid fa-check-double mr-1"></i>簽到扣堂
+                                </button>
+                            ` : `
+                                <button onclick="promptAttendance('${l.id}', '已排定', '${l.studentId}')" title="重置為已排定(補回堂數)" class="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs rounded-lg font-medium transition">
+                                    <i class="fa-solid fa-rotate-left mr-1"></i>復原
+                                </button>
+                            `}
+                            <button onclick="promptDeleteLesson('${l.id}')" title="刪除此排課" class="px-2 py-1 text-rose-500 hover:text-rose-700 text-xs hover:bg-rose-50 rounded-lg transition">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        };
+
+        window.populateStudentDropdowns = function() {
+            const students = Object.values(window.appState.students || {});
+            const optionsHtml = students.map(s =>
+                `<option value="${s.id}">${s.name} (${s.level || 'P&P'} - ${s.identity || '住戶'})</option>`
+            ).join('');
+
+            const lessonSelect = document.getElementById('modalLessonStudentId');
+            const pkgSelect = document.getElementById('modalPkgStudentId');
+
+            if (lessonSelect) lessonSelect.innerHTML = optionsHtml || '<option value="">請先新增學員</option>';
+            if (pkgSelect) pkgSelect.innerHTML = optionsHtml || '<option value="">請先新增學員</option>';
+        };
+
+        // Form Handlers
+        window.handleCreateStudent = async function(e) {
+            e.preventDefault();
+            const name = document.getElementById('modalStudentName').value.trim();
+            const level = document.getElementById('modalStudentLevel').value;
+            const identity = document.getElementById('modalStudentIdentity').value;
+            const phone = document.getElementById('modalStudentPhone').value.trim();
+            const operator = document.getElementById('modalStudentOperator').value.trim();
+            const notes = document.getElementById('modalStudentNotes').value.trim();
+
+            if (!name || !operator) return;
+            await window.saveStudentToCloud({ name, level, identity, phone, notes, remainingSessions: 0 }, operator);
+            closeModal('addStudentModal');
+            window.showToast(`已新增學員：${name} (${level})`);
+            e.target.reset();
+        };
+
+        window.handleCreateLesson = async function(e) {
+            e.preventDefault();
+            const studentId = document.getElementById('modalLessonStudentId').value;
+            const date = document.getElementById('modalLessonDate').value;
+            const time = document.getElementById('modalLessonTime').value;
+            const location = document.getElementById('modalLessonLocation').value.trim();
+            const topic = document.getElementById('modalLessonTopic').value.trim();
+            const operator = document.getElementById('modalLessonOperator').value.trim();
+
+            if (!studentId || !date || !operator) return;
+            await window.saveLessonToCloud({ studentId, date, time, location, topic, status: '已排定' }, operator);
+            closeModal('addLessonModal');
+            window.showToast('課程預約已建立！');
+        };
+
+        window.handleBuyPackage = async function(e) {
+            e.preventDefault();
+            const studentId = document.getElementById('modalPkgStudentId').value;
+            const count = Number(document.getElementById('modalPkgCount').value);
+            const price = Number(document.getElementById('modalPkgPrice').value);
+            const name = document.getElementById('modalPkgName').value.trim() || '標準套票';
+            const date = document.getElementById('modalPkgDate').value;
+            const paidStatus = document.getElementById('modalPkgPaidStatus').value;
+            const operator = document.getElementById('modalPkgOperator').value.trim();
+
+            if (!studentId || !count || !operator) return;
+            await window.savePackageToCloud({ studentId, count, price, name, date, paidStatus }, operator);
+            closeModal('buyPackageModal');
+            window.showToast('套票加購成功！堂數已更新');
+        };
+
+        // Excel Dual Report Exporter
+        window.exportExcelReport = function() {
+            if (typeof XLSX === 'undefined') {
+                window.showToast('Excel 工具套件載入中，請稍後再試', 'error');
+                return;
+            }
+
+            const lessons = Object.values(window.appState.lessons || {});
+            const students = window.appState.students || {};
+            const logs = Object.values(window.appState.logs || {});
+
+            const LEVELS = ['Red Ball', 'Orange Ball', 'Green Ball', 'Yellow Ball', 'P&P'];
+
+            // Sheet 1: Monthly Level Statistics Analysis
+            const monthlyStats = {};
+
+            lessons.forEach(l => {
+                if (!l.date) return;
+                const month = l.date.substring(0, 7); // YYYY-MM
+                const student = students[l.studentId] || { level: 'P&P', identity: '住戶' };
+                const level = student.level && LEVELS.includes(student.level) ? student.level : 'P&P';
+                const identity = student.identity || '住戶';
+
+                if (!monthlyStats[month]) {
+                    monthlyStats[month] = {};
+                    LEVELS.forEach(lvl => {
+                        monthlyStats[month][lvl] = {
+                            totalBooked: 0,
+                            uniqueStudents: new Set(),
+                            residentBookings: 0,
+                            visitorBookings: 0
+                        };
+                    });
+                }
+
+                const target = monthlyStats[month][level];
+                target.totalBooked += 1;
+                target.uniqueStudents.add(l.studentId);
+
+                if (identity === '住戶') {
+                    target.residentBookings += 1;
+                } else {
+                    target.visitorBookings += 1;
+                }
+            });
+
+            const sheet1Data = [
+                ["月份 (Month)", "訓練級別 (Level)", "預訂課堂總數 (Total Bookings)", "上課不重複學員數 (Unique Students)", "住戶預訂堂數 (Resident Bookings)", "訪客預訂堂數 (Visitor Bookings)"]
+            ];
+
+            const sortedMonths = Object.keys(monthlyStats).sort().reverse();
+            if (sortedMonths.length === 0) {
+                sheet1Data.push(["無歷史資料", "-", 0, 0, 0, 0]);
+            } else {
+                sortedMonths.forEach(m => {
+                    LEVELS.forEach(lvl => {
+                        const stat = monthlyStats[m][lvl];
+                        sheet1Data.push([
+                            m,
+                            lvl,
+                            stat.totalBooked,
+                            stat.uniqueStudents.size,
+                            stat.residentBookings,
+                            stat.visitorBookings
+                        ]);
+                    });
+                });
+            }
+
+            // Sheet 2: Operation Logs
+            const sheet2Data = [
+                ["紀錄時間 (Timestamp)", "經手同事 (Operator)", "動作類型 (Action Type)", "相關學員 (Student)", "詳細異動內容 (Details)"]
+            ];
+
+            logs.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+
+            if (logs.length === 0) {
+                sheet2Data.push(["-", "-", "-", "-", "尚無任何系統操作日誌紀錄"]);
+            } else {
+                logs.forEach(log => {
+                    sheet2Data.push([
+                        log.timestamp || '-',
+                        log.operator || '教練組',
+                        log.actionType || '-',
+                        log.studentName || '-',
+                        log.details || ''
+                    ]);
+                });
+            }
+
+            // Generate Excel Workbook
+            const wb = XLSX.utils.book_new();
+
+            const ws1 = XLSX.utils.aoa_to_sheet(sheet1Data);
+            ws1['!cols'] = [{ wch: 14 }, { wch: 18 }, { wch: 28 }, { wch: 32 }, { wch: 28 }, { wch: 28 }];
+            XLSX.utils.book_append_sheet(wb, ws1, "每月級別統計分析");
+
+            const ws2 = XLSX.utils.aoa_to_sheet(sheet2Data);
+            ws2['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 16 }, { wch: 50 }];
+            XLSX.utils.book_append_sheet(wb, ws2, "操作日誌表");
+
+            const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+            XLSX.writeFile(wb, `網球課程分析與操作日誌雙報表_${today}.xlsx`);
+
+            window.showToast('已成功匯出 Excel 雙報表！');
+        };
+    </script>
+</body>
+</html>
